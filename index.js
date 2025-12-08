@@ -26,27 +26,34 @@ const client = new MongoClient(uri, {
   },
 });
 
-
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
     // await client.connect();
 
+    const myDB = client.db("ticketBariDB");
+    const allTicketsCollection = myDB.collection("allTickets");
 
     
+
+    // all ticket api
+    app.post("/all-tickets", async (req, res) => {
+      const ticketData = req.body;
+      const result = await allTicketsCollection.insertOne(ticketData);
+      res.send(result);
+    });
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!"
+    );
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
   }
 }
 run().catch(console.dir);
-
-
-
-
 
 app.get("/", (req, res) => {
   res.send("TicketBari is running..........");
