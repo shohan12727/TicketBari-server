@@ -15,6 +15,33 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
+// middleware
+app.use(
+  cors({
+    origin: ["http://localhost:5173", process.env.CLIENT_URL],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+  })
+);
+app.use(express.json());
+
+// jwt middlewares
+const verifyJWT = async (req, res, next) => {
+  const token = req?.headers?.authorization?.split(" ")[1];
+  console.log(token);
+  if (!token) return res.status(401).send({ message: "Unauthorized Access!" });
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    req.tokenEmail = decoded.email;
+    console.log(decoded);
+    next();
+  } catch (err) {
+    console.log(err);
+    return res.status(401).send({ message: "Unauthorized Access!", err });
+  }
+};
+
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.alsn6h3.mongodb.net/?appName=Cluster0`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -34,10 +61,8 @@ async function run() {
     const myDB = client.db("ticketBariDB");
     const allTicketsCollection = myDB.collection("allTickets");
 
-    
-
     // all ticket api
-    app.post("/all-tickets", async (req, res) => {
+    app.post("/add-tickets", async (req, res) => {
       const ticketData = req.body;
       const result = await allTicketsCollection.insertOne(ticketData);
       res.send(result);
@@ -62,33 +87,3 @@ app.get("/", (req, res) => {
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`);
 });
-
-// middleware
-app.use(
-  cors({
-    origin: [
-      "http://localhost:5173",
-      "http://localhost:5174",
-      //   'https://b12-m11-session.web.app', amar ta bosabo
-    ],
-    credentials: true,
-    optionSuccessStatus: 200,
-  })
-);
-app.use(express.json());
-
-// jwt middlewares
-const verifyJWT = async (req, res, next) => {
-  const token = req?.headers?.authorization?.split(" ")[1];
-  console.log(token);
-  if (!token) return res.status(401).send({ message: "Unauthorized Access!" });
-  try {
-    const decoded = await admin.auth().verifyIdToken(token);
-    req.tokenEmail = decoded.email;
-    console.log(decoded);
-    next();
-  } catch (err) {
-    console.log(err);
-    return res.status(401).send({ message: "Unauthorized Access!", err });
-  }
-};
