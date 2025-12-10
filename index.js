@@ -2,7 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const admin = require("firebase-admin");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -62,9 +62,45 @@ async function run() {
     const allTicketsCollection = myDB.collection("allTickets");
 
     // all ticket api
-    app.post("/add-tickets", async (req, res) => {
+    app.post("/tickets", async (req, res) => {
       const ticketData = req.body;
+      ticketData.status = "pending";
       const result = await allTicketsCollection.insertOne(ticketData);
+      res.send(result);
+    });
+
+    app.get("/tickets", async (req, res) => {
+      const result = await allTicketsCollection.find().toArray();
+      res.send(result);
+    });
+
+    // const approvedTickets = await ticketCollection.find({status:'approved'})
+
+    app.get("/tickets/approved", async (req, res) => {
+      const result = await allTicketsCollection.
+        find({ status: "approved" }).toArray()
+      ;
+      res.send(result);
+    });
+
+    app.patch("/tickets/status/:id", async (req, res) => {
+      const id = req.params.id;
+      const { status } = req.body;
+      const query = { _id: new ObjectId(id) };
+      const updatedStatus = {
+        $set: {
+          status,
+        },
+      };
+      const result = await allTicketsCollection.updateOne(query, updatedStatus);
+      res.send(result);
+    });
+
+    app.delete("/tickets/:id", async (req, res) => {
+      const id = req.params.id;
+      const result = await allTicketsCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
       res.send(result);
     });
 
