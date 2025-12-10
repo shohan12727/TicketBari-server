@@ -60,6 +60,7 @@ async function run() {
 
     const myDB = client.db("ticketBariDB");
     const allTicketsCollection = myDB.collection("allTickets");
+    const allBookingTicketsCollection = myDB.collection("bookedTickets");
 
     // all ticket api
     app.post("/tickets", async (req, res) => {
@@ -74,12 +75,20 @@ async function run() {
       res.send(result);
     });
 
-    // const approvedTickets = await ticketCollection.find({status:'approved'})
-
     app.get("/tickets/approved", async (req, res) => {
-      const result = await allTicketsCollection.
-        find({ status: "approved" }).toArray()
-      ;
+      // alltickets a eita dekhano hoyeche
+      const result = await allTicketsCollection
+        .find({ status: "approved" })
+        .toArray();
+      res.send(result);
+    });
+
+    app.get("/tickets/approved/:id", async (req, res) => {
+      // alltickets details a dekhano hoyeche
+      const id = req.params.id;
+      const result = await allTicketsCollection.findOne({
+        _id: new ObjectId(id),
+      });
       res.send(result);
     });
 
@@ -101,6 +110,19 @@ async function run() {
       const result = await allTicketsCollection.deleteOne({
         _id: new ObjectId(id),
       });
+      res.send(result);
+    });
+
+    // /booking-tickets related api
+    app.post("/booking-tickets", async (req, res) => {
+      const bookingTicketData = req.body;
+      bookingTicketData.status = "pending";
+      const result = await allBookingTicketsCollection.insertOne(bookingTicketData);
+      res.send(result);
+    });
+
+      app.get("/booking-tickets", async (req, res) => {
+      const result = await allBookingTicketsCollection.find().toArray();
       res.send(result);
     });
 
