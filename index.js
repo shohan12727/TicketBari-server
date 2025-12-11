@@ -117,12 +117,44 @@ async function run() {
     app.post("/booking-tickets", async (req, res) => {
       const bookingTicketData = req.body;
       bookingTicketData.status = "pending";
-      const result = await allBookingTicketsCollection.insertOne(bookingTicketData);
+      const result = await allBookingTicketsCollection.insertOne(
+        bookingTicketData
+      );
       res.send(result);
     });
 
-      app.get("/booking-tickets", async (req, res) => {
+    app.get("/booking-tickets", async (req, res) => {
       const result = await allBookingTicketsCollection.find().toArray();
+      res.send(result);
+    });
+
+    app.patch("/booking-tickets/accept/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const updatedStatus = {
+        $set: {
+          status: "Accept",
+        },
+      };
+      const result = await allBookingTicketsCollection.updateOne(
+        query,
+        updatedStatus
+      );
+      res.send(result);
+    });
+
+    app.patch("/booking-tickets/reject/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const updatedStatus = {
+        $set: {
+          status: "Reject",
+        },
+      };
+      const result = await allBookingTicketsCollection.updateOne(
+        query,
+        updatedStatus
+      );
       res.send(result);
     });
 
