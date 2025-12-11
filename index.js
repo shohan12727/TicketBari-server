@@ -5,6 +5,7 @@ const admin = require("firebase-admin");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 3000;
+const stripe = require("stripe")(process.env.STRIPE_SERECT_KEY);
 
 // firebase admin
 const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
@@ -133,7 +134,7 @@ async function run() {
       const query = { _id: new ObjectId(id) };
       const updatedStatus = {
         $set: {
-          status: "Accept",
+          status: "accepted",
         },
       };
       const result = await allBookingTicketsCollection.updateOne(
@@ -148,7 +149,7 @@ async function run() {
       const query = { _id: new ObjectId(id) };
       const updatedStatus = {
         $set: {
-          status: "Reject",
+          status: "rejected",
         },
       };
       const result = await allBookingTicketsCollection.updateOne(
@@ -156,6 +157,33 @@ async function run() {
         updatedStatus
       );
       res.send(result);
+    });
+
+    // payment related api
+    app.post("/create-checkout-session", async (req, res) => {
+      const paymentInfo = req.body;
+      console.log(req.body);
+// {
+//   id: '693a65b869043b2c02097497',
+//   paymentTitle: 'Possimus aperiam hi',
+//   paymentPrice: 675,
+//   paymentQuantity: 2,
+//   userName: 'Levi Yang',
+//   userEmail: 'lucis@mailinator.com'
+// }
+
+      // const session = await stripe.checkout.sessions.create({
+      //   success_url: "https://example.com/success",
+      //   line_items: [
+      //     {
+      //       price: "price_1MotwRLkdIwHu7ixYcPLm5uZ",
+      //       quantity: 2,
+      //     },
+      //   ],
+      //   mode: "payment",
+        
+      // });
+      res.send(paymentInfo);
     });
 
     // Send a ping to confirm a successful connection
