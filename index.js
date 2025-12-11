@@ -62,6 +62,7 @@ async function run() {
     const myDB = client.db("ticketBariDB");
     const allTicketsCollection = myDB.collection("allTickets");
     const allBookingTicketsCollection = myDB.collection("bookedTickets");
+    const ticketsPaymentCollection = myDB.collection("ticketPayment");
 
     // all ticket api
     app.post("/tickets", async (req, res) => {
@@ -161,29 +162,55 @@ async function run() {
 
     // payment related api
     app.post("/create-checkout-session", async (req, res) => {
-      const paymentInfo = req.body;
-      console.log(req.body);
-// {
-//   id: '693a65b869043b2c02097497',
-//   paymentTitle: 'Possimus aperiam hi',
-//   paymentPrice: 675,
-//   paymentQuantity: 2,
-//   userName: 'Levi Yang',
-//   userEmail: 'lucis@mailinator.com'
-// }
+      try {
+        const paymentInfo = req.body;
 
-      // const session = await stripe.checkout.sessions.create({
-      //   success_url: "https://example.com/success",
-      //   line_items: [
-      //     {
-      //       price: "price_1MotwRLkdIwHu7ixYcPLm5uZ",
-      //       quantity: 2,
-      //     },
-      //   ],
-      //   mode: "payment",
-        
-      // });
-      res.send(paymentInfo);
+        const {
+          id,
+          paymentTitle,
+          paymentPrice,
+          paymentQuantity,
+          userName,
+          userEmail,
+        } = paymentInfo;
+
+        const session = await stripe.checkout.sessions.create({
+          line_items: [
+            {
+              price_data: {
+                currency: "usd",
+                product_data: {
+                  name: paymentTitle,
+                  description: `Ticket purchase by ${userName}`,
+                },
+                unit_amount: paymentPrice * 100, 
+              },
+              quantity: paymentQuantity,
+            },
+          ],
+
+          customer_email: userEmail,
+
+          mode: "payment",
+
+          metadata: {
+            ticketId: id,
+            buyerName: userName,
+            buyerEmail: userEmail,
+          },
+
+          success_url: `${process.env.CLIENT_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${process.env.CLIENT_URL}/payment-cancel`,
+        });
+
+        // -------------------------------------
+        // Return Stripe redirect URL
+        // -------------------------------------
+        return res.send({ url: session.url });
+      } catch (error) {
+        console.error("Stripe Error:", error);
+        return res.status(500).json({ message: "Something went wrong" });
+      }
     });
 
     // Send a ping to confirm a successful connection
