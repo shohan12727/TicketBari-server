@@ -63,6 +63,7 @@ async function run() {
     const allTicketsCollection = myDB.collection("allTickets");
     const allBookingTicketsCollection = myDB.collection("bookedTickets");
     const ticketsPaymentCollection = myDB.collection("ticketPayment");
+    const userCollection = myDB.collection("users");
 
     // all ticket api
     app.post("/tickets", async (req, res) => {
@@ -257,7 +258,29 @@ async function run() {
         return res.status(500).json({ message: "Server error" });
       }
     });
-    
+
+    //user related api
+    app.post("/user", async (req, res) => {
+      const userData = req.body;
+      userData.created_at = new Date().toISOString();
+      userData.last_loggedIn = new Date().toISOString();
+      userData.role = "customer";
+      const query = {
+        email: userData.email,
+      };
+      const alreadyExists = await userCollection.findOne(query);
+      if (alreadyExists) {
+        console.log("Updating user info......");
+        const result = await userCollection.updateOne(query, {
+          $set: {
+            last_loggedIn: new Date().toISOString(),
+          },
+        });
+        return res.send(result);
+      }
+      const result = userCollection.insertOne(userData);
+      res.send(result);
+    });
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
