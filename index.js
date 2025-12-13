@@ -27,22 +27,6 @@ app.use(
 );
 app.use(express.json());
 
-// jwt middlewares
-const verifyJWT = async (req, res, next) => {
-  const token = req?.headers?.authorization?.split(" ")[1];
-  console.log(token);
-  if (!token) return res.status(401).send({ message: "Unauthorized Access!" });
-  try {
-    const decoded = await admin.auth().verifyIdToken(token);
-    req.tokenEmail = decoded.email;
-    console.log(decoded);
-    next();
-  } catch (err) {
-    console.log(err);
-    return res.status(401).send({ message: "Unauthorized Access!", err });
-  }
-};
-
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.alsn6h3.mongodb.net/?appName=Cluster0`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -64,6 +48,35 @@ async function run() {
     const allBookingTicketsCollection = myDB.collection("bookedTickets");
     const ticketsPaymentCollection = myDB.collection("ticketPayment");
     const userCollection = myDB.collection("users");
+
+    // MIDDLEWARE FOR SECURE
+
+    const verifyJWT = async (req, res, next) => {
+      const token = req?.headers?.authorization?.split(" ")[1];
+      console.log(token);
+      if (!token)
+        return res.status(401).send({ message: "Unauthorized Access!" });
+      try {
+        const decoded = await admin.auth().verifyIdToken(token);
+        req.tokenEmail = decoded.email;
+        console.log(decoded);
+        next();
+      } catch (err) {
+        console.log(err);
+        return res.status(401).send({ message: "Unauthorized Access!", err });
+      }
+    };
+
+    const verifyADMIN = async (req, res, next) => {
+      const email = req.tokenEmail;
+      const user = await userCollection.findOne({ email });
+      if (user?.role !== "admin")
+        return res
+          .status(403)
+          .send({ message: "Admin only Actions!", role: user?.role });
+
+      next();
+    };
 
     // all ticket api
     app.post("/tickets", async (req, res) => {
@@ -259,7 +272,8 @@ async function run() {
       }
     });
 
-    //user related api
+    // USER RELATED API
+
     app.post("/user", async (req, res) => {
       const userData = req.body;
       userData.created_at = new Date().toISOString();
@@ -281,6 +295,136 @@ async function run() {
       const result = userCollection.insertOne(userData);
       res.send(result);
     });
+
+    // get a user's role
+    app.get("/user/role", verifyJWT, async (req, res) => {
+      const result = await userCollection.findOne({ email: req.tokenEmail });
+      res.send({ role: result?.role });
+    });
+
+    
+
+    // get all users for admin - manage user
+    app.get('/users', verifyJWT, verifyADMIN, async (req, res) => {
+      const adminEmail = req.tokenEmail
+      const result = await userCollection
+        .find({ email: { $ne: adminEmail } })
+        .toArray()
+      res.send(result)
+    })
+
+    // Make a user ADMIN (Admin only)
+    app.patch(
+      "/users/make-admin/:id",
+      verifyJWT,
+      verifyADMIN,
+      async (req, res) => {
+        const { id } = req.params;
+
+        const user = await userCollection.findOne({ _id: new ObjectId(id) });
+        if (!user) {
+          return res.status(404).send({ message: "User not found" });
+        }
+
+        if (user.role === "admin") {
+          return res.status(400).send({ message: "User is already admin" });
+        }
+
+        const result = await userCollection.updateOne(
+          { _id: new ObjectId(id) },
+          {
+            $set: {
+              role: "admin",
+              updatedAt: new Date(),
+            },
+          }
+        );
+
+        res.send({ message: "User promoted to admin", result });
+      }
+    );
+    // Make a user VENDOR (Admin only)
+    app.patch(
+      "/users/make-vendor/:id",
+      verifyJWT,
+      verifyADMIN,
+      async (req, res) => {
+        const { id } = req.params;
+
+        const user = await userCollection.findOne({ _id: new ObjectId(id) });
+        if (!user) {
+          return res.status(404).send({ message: "User not found" });
+        }
+
+        if (user.role === "vendor") {
+          return res.status(400).send({ message: "User is already a vendor" });
+        }
+
+        if (user.role === "admin") {
+          return res
+            .status(400)
+            .send({ message: "Admin role cannot be downgraded" });
+        }
+
+        const result = await userCollection.updateOne(
+          { _id: new ObjectId(id) },
+          {
+            $set: {
+              role: "vendor",
+              updatedAt: new Date(),
+            },
+          }
+        );
+
+        res.send({ message: "User promoted to vendor", result });
+      }
+    );
+
+    // Mark a vendor as FRAUD (Admin only)
+    app.patch(
+      "/users/mark-fraud/:id",
+      verifyJWT,
+      verifyADMIN,
+      async (req, res) => {
+        const { id } = req.params;
+
+        const user = await userCollection.findOne({ _id: new ObjectId(id) });
+        if (!user) {
+          return res.status(404).send({ message: "User not found" });
+        }
+
+        if (user.role !== "vendor") {
+          return res
+            .status(400)
+            .send({ message: "Only vendors can be marked as fraud" });
+        }
+
+        await userCollection.updateOne(
+          { _id: new ObjectId(id) },
+          {
+            $set: {
+              role: "fraud",
+              fraudAt: new Date(),
+            },
+          }
+        );
+
+        await allTicketsCollection.updateMany(
+          { vendorEmail: user.email },
+          {
+            $set: {
+              isHidden: true,
+              hiddenAt: new Date(),
+            },
+          }
+        );
+
+        res.send({
+          message:
+            "Vendor marked as fraud. All tickets hidden and future actions blocked.",
+        });
+      }
+    );
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
