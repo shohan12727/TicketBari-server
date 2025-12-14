@@ -7,7 +7,8 @@ const app = express();
 const port = process.env.PORT || 3000;
 const stripe = require("stripe")(process.env.STRIPE_SERECT_KEY);
 
-// firebase admin
+// FIREBASE ADMIN
+
 const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
   "utf-8"
 );
@@ -16,7 +17,8 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
-// middleware
+// MIDDLEWARE
+
 app.use(
   cors({
     origin: ["http://localhost:5173", process.env.CLIENT_URL],
@@ -48,18 +50,18 @@ async function run() {
     const allBookingTicketsCollection = myDB.collection("bookedTickets");
     const ticketsPaymentCollection = myDB.collection("ticketPayment");
     const userCollection = myDB.collection("users");
+    const advertiseCollection = myDB.collection("advertiseTicket");
 
-    // MIDDLEWARE FOR SECURE
+    // ROLE MIDDLEWARE
 
     const verifyJWT = async (req, res, next) => {
       const token = req?.headers?.authorization?.split(" ")[1];
-      console.log(token);
       if (!token)
         return res.status(401).send({ message: "Unauthorized Access!" });
       try {
         const decoded = await admin.auth().verifyIdToken(token);
         req.tokenEmail = decoded.email;
-        console.log(decoded);
+
         next();
       } catch (err) {
         console.log(err);
@@ -78,16 +80,45 @@ async function run() {
       next();
     };
 
-    // all ticket api
+    const verifySELLER = async (req, res, next) => {
+      const email = req.tokenEmail;
+      const user = await userCollection.findOne({ email });
+      if (user?.role !== "seller")
+        return res
+          .status(403)
+          .send({ message: "Seller only Actions!", role: user?.role });
+
+      next();
+    };
+
+    // ALL TICKET API
+
     app.post("/tickets", async (req, res) => {
       const ticketData = req.body;
       ticketData.status = "pending";
+      ticketData.createdAt = new Date().toISOString();
+      ticketData.verificationStatus = "pending";
+      ticketData.isAdvertise = false;
       const result = await allTicketsCollection.insertOne(ticketData);
       res.send(result);
     });
 
     app.get("/tickets", async (req, res) => {
       const result = await allTicketsCollection.find().toArray();
+      res.send(result);
+    });
+
+    app.delete("/tickets/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await allTicketsCollection.deleteOne(query);
+      res.send(result);
+    });
+    
+
+    app.get("/tickets/vendor", async (req, res) => {
+      const vendorEmail = req.query.email;
+      const result = await allTicketsCollection.find({ vendorEmail }).toArray();
       res.send(result);
     });
 
@@ -108,7 +139,15 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/tickets/status/:id", async (req, res) => {
+    app.post("/advertiseTickets", async (req, res) => {
+      const advertiseTicketData = req.body;
+      advertiseTicketData.isAdvertise = true;
+      delete advertiseTicketData._id;
+      const result = await advertiseCollection.insertOne(advertiseTicketData);
+      res.send(result);
+    });
+
+    app.patch("/tickets/status/approved/:id", async (req, res) => {
       const id = req.params.id;
       const { status } = req.body;
       const query = { _id: new ObjectId(id) };
@@ -121,18 +160,25 @@ async function run() {
       res.send(result);
     });
 
-    app.delete("/tickets/:id", async (req, res) => {
+    app.patch("/tickets/status/rejected/:id", async (req, res) => {
       const id = req.params.id;
-      const result = await allTicketsCollection.deleteOne({
-        _id: new ObjectId(id),
-      });
+      const { status } = req.body;
+      const query = { _id: new ObjectId(id) };
+      const updatedStatus = {
+        $set: {
+          status,
+        },
+      };
+      const result = await allTicketsCollection.updateOne(query, updatedStatus);
       res.send(result);
     });
 
-    // /booking-tickets related api
+    //  BOOKING-TICKETS RELATED API
+
     app.post("/booking-tickets", async (req, res) => {
       const bookingTicketData = req.body;
       bookingTicketData.status = "pending";
+      bookingTicketData.paymentStatus = "not-paid";
       const result = await allBookingTicketsCollection.insertOne(
         bookingTicketData
       );
@@ -174,7 +220,8 @@ async function run() {
       res.send(result);
     });
 
-    // payment related api
+    // PAYMENT RELATED API
+
     app.post("/create-checkout-session", async (req, res) => {
       try {
         const paymentInfo = req.body;
@@ -225,54 +272,143 @@ async function run() {
       }
     });
 
+    // app.post("/dashboard/payment/success", async (req, res) => {
+    //   try {
+    //     const { sessionId } = req.body;
+
+    //     if (!sessionId) {
+    //       return res.status(400).json({ message: "Session ID missing" });
+    //     }
+
+    //     const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+    //     const lineItems = await stripe.checkout.sessions.listLineItems(
+    //       sessionId
+    //     );
+
+    //     const ticketId = session.metadata.ticketId;
+    //     const buyerName = session.metadata.buyerName;
+    //     const buyerEmail = session.metadata.buyerEmail;
+
+    //     const amountTotal = session.amount_total / 100;
+    //     const currency = session.currency;
+    //     const status = session.payment_status;
+
+    //     const productTitle = lineItems.data[0].description;
+    //     const quantity = lineItems.data[0].quantity;
+
+    //     if (session.status === "complete") {
+    //       const paymentDoc = {
+    //         ticketId,
+    //         buyerName,
+    //         buyerEmail,
+    //         amount: amountTotal,
+    //         currency,
+    //         status,
+    //         quantity,
+    //         productTitle,
+    //         sessionId,
+    //         createdAt: new Date(),
+    //       };
+    //       const result = await ticketsPaymentCollection.insertOne(paymentDoc);
+    //       return res.send(result);
+    //     }
+    //   } catch (error) {
+    //     console.error("Payment Save Error:", error);
+    //     return res.status(500).json({ message: "Server error" });
+    //   }
+    // });
+
+    // USER RELATED API
+
+    // test
+
     app.post("/dashboard/payment/success", async (req, res) => {
       try {
         const { sessionId } = req.body;
-
         if (!sessionId) {
           return res.status(400).json({ message: "Session ID missing" });
         }
 
+        // 1. Retrieve Stripe session
         const session = await stripe.checkout.sessions.retrieve(sessionId);
-
         const lineItems = await stripe.checkout.sessions.listLineItems(
           sessionId
         );
+
+        if (session.status !== "complete") {
+          return res.status(400).json({ message: "Payment not completed" });
+        }
 
         const ticketId = session.metadata.ticketId;
         const buyerName = session.metadata.buyerName;
         const buyerEmail = session.metadata.buyerEmail;
 
+        const quantityPurchased = lineItems.data[0].quantity;
+        const productTitle = lineItems.data[0].description;
+
         const amountTotal = session.amount_total / 100;
         const currency = session.currency;
-        const status = session.payment_status;
+        const paymentStatus = session.payment_status;
 
-        const productTitle = lineItems.data[0].description;
-        const quantity = lineItems.data[0].quantity;
+        // 2. Save payment info
+        const paymentDoc = {
+          ticketId,
+          buyerName,
+          buyerEmail,
+          amount: amountTotal,
+          currency,
+          status: paymentStatus,
+          quantity: quantityPurchased,
+          productTitle,
+          sessionId,
+          createdAt: new Date(),
+        };
 
-        if (session.status === "complete") {
-          const paymentDoc = {
-            ticketId,
-            buyerName,
-            buyerEmail,
-            amount: amountTotal,
-            currency,
-            status,
-            quantity,
-            productTitle,
-            sessionId,
-            createdAt: new Date(),
-          };
-          const result = await ticketsPaymentCollection.insertOne(paymentDoc);
-          return res.send(result);
+        await ticketsPaymentCollection.insertOne(paymentDoc);
+
+        // 3. Update booking ticket → paymentStatus = "paid"
+        const bookingUpdateResult = await allBookingTicketsCollection.updateOne(
+          {
+            status: "accepted",
+          },
+          {
+            $set: {
+              paymentStatus: "paid",
+              paidAt: new Date(),
+            },
+          }
+        );
+
+        // 4. Deduct quantity from allTicketsCollection
+        const ticketUpdateResult = await allTicketsCollection.findOneAndUpdate(
+          {
+            _id: new ObjectId(ticketId),
+            quantity: { $gte: quantityPurchased },
+          },
+          {
+            $inc: { quantity: -quantityPurchased },
+          },
+          { returnDocument: "after" }
+        );
+
+        if (!ticketUpdateResult.value) {
+          return res.status(400).json({
+            message: "Insufficient ticket quantity",
+          });
         }
+
+        return res.send({
+          message: "Payment processed successfully",
+          paymentInserted: true,
+          bookingUpdated: bookingUpdateResult.modifiedCount > 0,
+          remainingTicketQuantity: ticketUpdateResult.value.quantity,
+        });
       } catch (error) {
-        console.error("Payment Save Error:", error);
+        console.error("Payment Success Error:", error);
         return res.status(500).json({ message: "Server error" });
       }
     });
-
-    // USER RELATED API
 
     app.post("/user", async (req, res) => {
       const userData = req.body;
@@ -284,7 +420,6 @@ async function run() {
       };
       const alreadyExists = await userCollection.findOne(query);
       if (alreadyExists) {
-        console.log("Updating user info......");
         const result = await userCollection.updateOne(query, {
           $set: {
             last_loggedIn: new Date().toISOString(),
@@ -302,16 +437,14 @@ async function run() {
       res.send({ role: result?.role });
     });
 
-    
-
     // get all users for admin - manage user
-    app.get('/users', verifyJWT, verifyADMIN, async (req, res) => {
-      const adminEmail = req.tokenEmail
+    app.get("/users", verifyJWT, verifyADMIN, async (req, res) => {
+      const adminEmail = req.tokenEmail;
       const result = await userCollection
         .find({ email: { $ne: adminEmail } })
-        .toArray()
-      res.send(result)
-    })
+        .toArray();
+      res.send(result);
+    });
 
     // Make a user ADMIN (Admin only)
     app.patch(
