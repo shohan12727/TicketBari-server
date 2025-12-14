@@ -50,7 +50,7 @@ async function run() {
     const allBookingTicketsCollection = myDB.collection("bookedTickets");
     const ticketsPaymentCollection = myDB.collection("ticketPayment");
     const userCollection = myDB.collection("users");
-    const advertiseCollection = myDB.collection("advertiseTicket");
+    // const advertiseCollection = myDB.collection("advertiseTicket");
 
     // ROLE MIDDLEWARE
 
@@ -114,7 +114,6 @@ async function run() {
       const result = await allTicketsCollection.deleteOne(query);
       res.send(result);
     });
-    
 
     app.get("/tickets/vendor", async (req, res) => {
       const vendorEmail = req.query.email;
@@ -130,6 +129,57 @@ async function run() {
       res.send(result);
     });
 
+    // ADVERTISE / UNADVERTISE TICKET (Admin only)
+    app.patch(
+      "/tickets/advertise/:id",
+      verifyJWT,
+      verifyADMIN,
+      async (req, res) => {
+        const { id } = req.params;
+        const { isAdvertise } = req.body;
+
+        if (typeof isAdvertise !== "boolean") {
+          return res.status(400).send({ message: "Invalid advertise value" });
+        }
+
+        try {
+          // If trying to ADVERTISE → enforce max 6 rule
+          if (isAdvertise === true) {
+            const advertisedTickets = await allTicketsCollection
+              .find({ isAdvertise: true })
+              .limit(6)
+              .toArray();
+
+            if (advertisedTickets.length >= 6) {
+              return res.status(403).send({
+                message: "Maximum 6 tickets can be advertised",
+              });
+            }
+          }
+
+          const result = await allTicketsCollection.updateOne(
+            { _id: new ObjectId(id) },
+            {
+              $set: {
+                isAdvertise,
+              },
+            }
+          );
+
+          if (result.matchedCount === 0) {
+            return res.status(404).send({ message: "Ticket not found" });
+          }
+
+          res.send({
+            modifiedCount: result.modifiedCount,
+            message: "Advertise status updated successfully",
+          });
+        } catch {
+          res.status(500).send({ message: "Server error" });
+        }
+      }
+    );
+
     app.get("/tickets/approved/:id", async (req, res) => {
       // alltickets details a dekhano hoyeche
       const id = req.params.id;
@@ -139,13 +189,13 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/advertiseTickets", async (req, res) => {
-      const advertiseTicketData = req.body;
-      advertiseTicketData.isAdvertise = true;
-      delete advertiseTicketData._id;
-      const result = await advertiseCollection.insertOne(advertiseTicketData);
-      res.send(result);
-    });
+    // app.post("/advertiseTickets", async (req, res) => {
+    //   const advertiseTicketData = req.body;
+    //   advertiseTicketData.isAdvertise = true;
+    //   delete advertiseTicketData._id;
+    //   const result = await advertiseCollection.insertOne(advertiseTicketData);
+    //   res.send(result);
+    // });
 
     app.patch("/tickets/status/approved/:id", async (req, res) => {
       const id = req.params.id;
