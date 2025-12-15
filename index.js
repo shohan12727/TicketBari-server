@@ -227,6 +227,7 @@ async function run() {
 
     app.post("/booking-tickets", async (req, res) => {
       const bookingTicketData = req.body;
+      console.log(bookingTicketData);
       bookingTicketData.status = "pending";
       bookingTicketData.paymentStatus = "not-paid";
       const result = await allBookingTicketsCollection.insertOne(
@@ -275,7 +276,6 @@ async function run() {
     app.post("/create-checkout-session", async (req, res) => {
       try {
         const paymentInfo = req.body;
-
         const {
           id,
           paymentTitle,
@@ -284,6 +284,7 @@ async function run() {
           userName,
           userEmail,
         } = paymentInfo;
+        // console.log(paymentInfo)
 
         const session = await stripe.checkout.sessions.create({
           line_items: [
@@ -322,142 +323,68 @@ async function run() {
       }
     });
 
-    // app.post("/dashboard/payment/success", async (req, res) => {
-    //   try {
-    //     const { sessionId } = req.body;
-
-    //     if (!sessionId) {
-    //       return res.status(400).json({ message: "Session ID missing" });
-    //     }
-
-    //     const session = await stripe.checkout.sessions.retrieve(sessionId);
-
-    //     const lineItems = await stripe.checkout.sessions.listLineItems(
-    //       sessionId
-    //     );
-
-    //     const ticketId = session.metadata.ticketId;
-    //     const buyerName = session.metadata.buyerName;
-    //     const buyerEmail = session.metadata.buyerEmail;
-
-    //     const amountTotal = session.amount_total / 100;
-    //     const currency = session.currency;
-    //     const status = session.payment_status;
-
-    //     const productTitle = lineItems.data[0].description;
-    //     const quantity = lineItems.data[0].quantity;
-
-    //     if (session.status === "complete") {
-    //       const paymentDoc = {
-    //         ticketId,
-    //         buyerName,
-    //         buyerEmail,
-    //         amount: amountTotal,
-    //         currency,
-    //         status,
-    //         quantity,
-    //         productTitle,
-    //         sessionId,
-    //         createdAt: new Date(),
-    //       };
-    //       const result = await ticketsPaymentCollection.insertOne(paymentDoc);
-    //       return res.send(result);
-    //     }
-    //   } catch (error) {
-    //     console.error("Payment Save Error:", error);
-    //     return res.status(500).json({ message: "Server error" });
-    //   }
-    // });
-
-    // USER RELATED API
-
-    // test
-
     app.post("/dashboard/payment/success", async (req, res) => {
       try {
         const { sessionId } = req.body;
+
         if (!sessionId) {
           return res.status(400).json({ message: "Session ID missing" });
         }
 
-        // 1. Retrieve Stripe session
         const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+        if (session.payment_status !== "paid") {
+          return res.status(400).json({ message: "Payment not completed" });
+        }
+
+        const existingPayment = await ticketsPaymentCollection.findOne({
+          sessionId,
+        });
+        if (existingPayment) {
+          return res.send(existingPayment);
+        }
+
+        const transactionId = session.payment_intent; // ✅ MAIN FIX
+        // console.log({transactionId});
+
         const lineItems = await stripe.checkout.sessions.listLineItems(
           sessionId
         );
 
-        if (session.status !== "complete") {
-          return res.status(400).json({ message: "Payment not completed" });
-        }
-
-        const ticketId = session.metadata.ticketId;
-        const buyerName = session.metadata.buyerName;
-        const buyerEmail = session.metadata.buyerEmail;
-
-        const quantityPurchased = lineItems.data[0].quantity;
-        const productTitle = lineItems.data[0].description;
-
-        const amountTotal = session.amount_total / 100;
-        const currency = session.currency;
-        const paymentStatus = session.payment_status;
-
-        // 2. Save payment info
         const paymentDoc = {
-          ticketId,
-          buyerName,
-          buyerEmail,
-          amount: amountTotal,
-          currency,
-          status: paymentStatus,
-          quantity: quantityPurchased,
-          productTitle,
+          ticketId: session.metadata?.ticketId || null,
+          name: session.customer_details?.name || null,
+          email: session.customer_details?.email || null,
+
+          amount: session.amount_total / 100,
+          currency: session.currency,
+          status: session.payment_status,
+
+          productTitle: lineItems.data[0]?.description || null,
+          quantity: lineItems.data[0]?.quantity || 1,
+
           sessionId,
+          transactionId,
+
           createdAt: new Date(),
         };
 
-        await ticketsPaymentCollection.insertOne(paymentDoc);
+        const result = await ticketsPaymentCollection.insertOne(paymentDoc);
 
-        // 3. Update booking ticket → paymentStatus = "paid"
-        const bookingUpdateResult = await allBookingTicketsCollection.updateOne(
-          {
-            status: "accepted",
-          },
-          {
-            $set: {
-              paymentStatus: "paid",
-              paidAt: new Date(),
-            },
-          }
-        );
-
-        // 4. Deduct quantity from allTicketsCollection
-        const ticketUpdateResult = await allTicketsCollection.findOneAndUpdate(
-          {
-            _id: new ObjectId(ticketId),
-            quantity: { $gte: quantityPurchased },
-          },
-          {
-            $inc: { quantity: -quantityPurchased },
-          },
-          { returnDocument: "after" }
-        );
-
-        if (!ticketUpdateResult.value) {
-          return res.status(400).json({
-            message: "Insufficient ticket quantity",
-          });
-        }
-
-        return res.send({
-          message: "Payment processed successfully",
-          paymentInserted: true,
-          bookingUpdated: bookingUpdateResult.modifiedCount > 0,
-          remainingTicketQuantity: ticketUpdateResult.value.quantity,
+        res.send({
+          success: true,
+          transactionId,
+          result,
         });
       } catch (error) {
-        console.error("Payment Success Error:", error);
-        return res.status(500).json({ message: "Server error" });
+        console.error("Payment Save Error:", error);
+        res.status(500).json({ message: "Server error" });
       }
+    });
+
+    app.get("/dashboard/payment/success", async (req, res) => {
+      const result = await ticketsPaymentCollection.find().toArray();
+      res.send(result);
     });
 
     app.post("/user", async (req, res) => {
