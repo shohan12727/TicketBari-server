@@ -109,14 +109,14 @@ async function run() {
       res.send(result);
     });
 
-    app.delete("/tickets/:id", async (req, res) => {
+    app.delete("/tickets/:id",verifyJWT, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await allTicketsCollection.deleteOne(query);
       res.send(result);
     });
 
-    app.get("/tickets/vendor", async (req, res) => {
+    app.get("/tickets/vendor",verifyJWT, async (req, res) => {
       const vendorEmail = req.query.email;
       const result = await allTicketsCollection.find({ vendorEmail }).toArray();
       res.send(result);
@@ -181,7 +181,7 @@ async function run() {
       }
     );
 
-    app.get("/tickets/approved/:id", verifyJWT, async (req, res) => {
+    app.get("/tickets/approved/:id", async (req, res) => {
       // alltickets details a dekhano hoyeche
       const id = req.params.id;
       const result = await allTicketsCollection.findOne({
@@ -249,9 +249,7 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/booking-tickets/vendor", async (req, res) => {
-
-     
+    app.get("/booking-tickets/vendor",verifyJWT, async (req, res) => {
       const result = await allBookingTicketsCollection
         .find()
         .toArray();
