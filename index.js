@@ -13,6 +13,7 @@ const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
   "utf-8"
 );
 const serviceAccount = JSON.parse(decoded);
+
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
@@ -21,7 +22,7 @@ admin.initializeApp({
 
 app.use(
   cors({
-    origin: ["http://localhost:5173", process.env.CLIENT_URL],
+    origin: ["http://localhost:5173", "https://ticket-bari-492a4.web.app"],
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
@@ -93,7 +94,7 @@ async function run() {
 
     // ALL TICKET API
 
-    app.post("/tickets", async (req, res) => {
+    app.post("/tickets", verifyJWT, verifySELLER, async (req, res) => {
       const ticketData = req.body;
       ticketData.status = "pending";
       ticketData.createdAt = new Date().toISOString();
@@ -180,7 +181,7 @@ async function run() {
       }
     );
 
-    app.get("/tickets/approved/:id", async (req, res) => {
+    app.get("/tickets/approved/:id", verifyJWT, async (req, res) => {
       // alltickets details a dekhano hoyeche
       const id = req.params.id;
       const result = await allTicketsCollection.findOne({
@@ -227,7 +228,7 @@ async function run() {
 
     app.post("/booking-tickets", async (req, res) => {
       const bookingTicketData = req.body;
-      console.log(bookingTicketData);
+
       bookingTicketData.status = "pending";
       bookingTicketData.paymentStatus = "not-paid";
       const result = await allBookingTicketsCollection.insertOne(
@@ -237,7 +238,23 @@ async function run() {
     });
 
     app.get("/booking-tickets", async (req, res) => {
-      const result = await allBookingTicketsCollection.find().toArray();
+      const email = req.query.email;
+
+      if (!email) {
+        return res.status(400).send({ message: "Email query is required" });
+      }
+      const result = await allBookingTicketsCollection
+        .find({ email })
+        .toArray();
+      res.send(result);
+    });
+
+    app.get("/booking-tickets/vendor", async (req, res) => {
+
+     
+      const result = await allBookingTicketsCollection
+        .find()
+        .toArray();
       res.send(result);
     });
 
@@ -383,7 +400,12 @@ async function run() {
     });
 
     app.get("/dashboard/payment/success", async (req, res) => {
-      const result = await ticketsPaymentCollection.find().toArray();
+      const email = req.query.email;
+
+      if (!email) {
+        return res.status(400).send({ message: "Email query is required" });
+      }
+      const result = await ticketsPaymentCollection.find({ email }).toArray();
       res.send(result);
     });
 
@@ -536,11 +558,10 @@ async function run() {
       }
     );
 
-    // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!"
+    // );
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
