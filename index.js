@@ -84,10 +84,10 @@ async function run() {
     const verifySELLER = async (req, res, next) => {
       const email = req.tokenEmail;
       const user = await userCollection.findOne({ email });
-      if (user?.role !== "seller")
+      if (user?.role !== "vendor")
         return res
           .status(403)
-          .send({ message: "Seller only Actions!", role: user?.role });
+          .send({ message: "Vendor only Actions!", role: user?.role });
 
       next();
     };
@@ -109,14 +109,67 @@ async function run() {
       res.send(result);
     });
 
-    app.delete("/tickets/:id",verifyJWT, async (req, res) => {
+    app.patch("/tickets/:id", verifyJWT, verifySELLER, async (req, res) => {
+      const { id } = req.params;
+      const email = req.tokenEmail;
+      
+      const {
+        fromLocation,
+        toLocation,
+        transportType,
+        ticketTitle,
+        quantity,
+        price,
+        imageURL,
+        departureDateTime,
+      } = req.body;
+
+      const query = {
+        _id: new ObjectId(id),
+        vendorEmail: email,
+      };
+
+      const updateDoc = {
+        $set: {
+          fromLocation,
+          toLocation,
+          transportType,
+          ticketTitle,
+          quantity,
+          price,
+          imageURL,
+          departureDateTime,
+          updatedAt: new Date(),
+        },
+      };
+
+      try {
+        const result = await allTicketsCollection.updateOne(query, updateDoc);
+
+        if (result.matchedCount === 0) {
+          return res.status(404).send({
+            message: "Ticket not found or unauthorized",
+          });
+        }
+
+        res.send({
+          modifiedCount: result.modifiedCount,
+          message: "Ticket updated successfully",
+        });
+      } catch (error) {
+        console.error("Update Ticket Error:", error);
+        res.status(500).send({ message: "Failed to update ticket" });
+      }
+    });
+
+    app.delete("/tickets/:id", verifyJWT, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await allTicketsCollection.deleteOne(query);
       res.send(result);
     });
 
-    app.get("/tickets/vendor",verifyJWT, async (req, res) => {
+    app.get("/tickets/vendor", verifyJWT, async (req, res) => {
       const vendorEmail = req.query.email;
       const result = await allTicketsCollection.find({ vendorEmail }).toArray();
       res.send(result);
@@ -249,10 +302,8 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/booking-tickets/vendor",verifyJWT, async (req, res) => {
-      const result = await allBookingTicketsCollection
-        .find()
-        .toArray();
+    app.get("/booking-tickets/vendor", verifyJWT, async (req, res) => {
+      const result = await allBookingTicketsCollection.find().toArray();
       res.send(result);
     });
 
